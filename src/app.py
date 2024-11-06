@@ -1,40 +1,159 @@
+import json
+import logging
 import os
-from openai import OpenAI
+import sys
+from datetime import datetime
+
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 
+# Set up logging
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
 load_dotenv()
 
-st.title("ChatGPT-like clone")
-
-client = OpenAI(
-    base_url="https://api.groq.com/openai/v1", api_key=os.getenv("LLM_API_KEY")
+# App configuration
+st.set_page_config(
+    page_title="Calendar Planning Assistant", page_icon="📅", layout="centered"
 )
-print(os.getenv("LLM_API_KEY"))
+st.title("🗓️ Calendar Planning Assistant")
 
-if "openai_model" not in st.session_state:
-    st.session_state["openai_model"] = "llama-3.1-70b-versatile"
+# API setup
+LLM_API_URL = "https://owebui.nclsp.com/openai/chat/completions"
+MODEL_ID = "gemini-1.5-flash-latest"
+LLM_API_KEY = os.getenv("LLM_API_KEY")
 
+headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
+
+# Initialize session state
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [
+        {
+            "role": "system",
+            "content": """You are a helpful calendar planning assistant. Help users organize their weekly schedule.
+            Provide specific time slots and structured suggestions. Always maintain a professional tone.""",
+        }
+    ]
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+if "query_status" not in st.session_state:
+    st.session_state.query_status = ""
+if "selected_query" not in st.session_state:
+    st.session_state.selected_query = ""
 
-if prompt := st.chat_input("What is up?"):
+# Calendar context sidebar
+with st.sidebar:
+    st.header("Calendar Context")
+    selected_week = st.date_input("Select Week Starting From:", datetime.now())
+    working_hours = st.slider("Working Hours per Day:", 4, 12, 8)
+    st.divider()
+    if st.button("Clear Conversation"):
+        st.session_state.messages = [
+            st.session_state.messages[0]
+        ]  # Keep system message
+
+
+def call_llm_api(messages):
+    try:
+        payload = {"model": MODEL_ID, "messages": messages, "stream": False}
+
+        logger.debug(f"API Request URL: {LLM_API_URL}")
+        logger.debug(f"Request Payload: {json.dumps(payload, indent=2)}")
+
+        with st.spinner("Getting response..."):
+            response = requests.post(
+                LLM_API_URL, headers=headers, json=payload, timeout=300
+            )
+
+            if response.status_code != 200:
+                st.session_state.query_status = f"Error: {response.text}"
+                return None
+
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                message = data["choices"][0].get("message", {})
+                st.session_state.query_status = "Success ✅"
+                with st.chat_message("assistant"):
+                    st.write(message.get("content"))
+                return message.get("content")
+            else:
+                st.session_state.query_status = "Error: Unexpected response format"
+                return None
+
+    except requests.exceptions.Timeout:
+        st.session_state.query_status = "Error: Request timed out"
+        return None
+    except Exception as e:
+        st.session_state.query_status = f"Error: {str(e)}"
+        return None
+
+
+def get_llm_response(messages):
+    response = call_llm_api(messages)
+    if response is None:
+        logger.error("Failed to get response from API")
+        return "Sorry, I couldn't process your request."
+    return response
+
+
+# Display chat history
+def display_chat_history():
+    for message in st.session_state.messages[1:]:  # Skip system message
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+
+# Main chat interface
+display_chat_history()
+
+# Chat input
+prompt = st.chat_input("Ask me about planning your calendar...")
+if prompt:
+    # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Get assistant response
     with st.chat_message("assistant"):
-        stream = client.chat.completions.create(
-            model=st.session_state["openai_model"],
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
-        response = st.write_stream(stream)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+        context = f"\nContext: Week starting from {selected_week}, {working_hours} working hours per day."
+        full_prompt = prompt + context
+
+        with st.spinner("Thinking..."):
+            response = get_llm_response(st.session_state.messages)
+            st.markdown(response)
+            st.session_state.messages.append({"role": "assistant", "content": response})
+
+
+def handle_button_click(prompt):
+    logger.debug(f"Button clicked with prompt: {prompt}")
+    st.session_state.selected_query = prompt
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    try:
+        response = get_llm_response(st.session_state.messages)
+        logger.debug(f"Response received: {response}")
+        if response:
+            st.session_state.messages.append({"role": "assistant", "content": response})
+    except Exception as e:
+        logger.error(f"Error in handle_button_click: {str(e)}")
+
+
+# Update button section without status display
+st.markdown("---")
+st.caption("Suggested prompts:")
+cols = st.columns(2)
+with cols[0]:
+    if st.button("📝 Plan my work week", use_container_width=True):
+        handle_button_click("Please help me plan my work week effectively")
+with cols[1]:
+    if st.button("🎯 Optimize my schedule", use_container_width=True):
+        handle_button_click("Please help me optimize my current schedule")
+
+# Display query status
+if st.session_state.selected_query:
+    st.markdown("---")
+    st.write("**Selected Query:**", st.session_state.selected_query)
+    st.write("**Status:**", st.session_state.query_status)
