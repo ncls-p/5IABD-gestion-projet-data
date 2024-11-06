@@ -33,10 +33,6 @@ if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "system", "content": "You are a helpful calendar planning assistant..."}
     ]
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "selected_query" not in st.session_state:
-    st.session_state.selected_query = ""
 if "query_status" not in st.session_state:
     st.session_state.query_status = ""
 
@@ -72,8 +68,6 @@ def call_llm_api(messages):
             if "choices" in data and len(data["choices"]) > 0:
                 message = data["choices"][0].get("message", {})
                 st.session_state.query_status = "Success ✅"
-                with st.chat_message("assistant"):
-                    st.write(message.get("content"))
                 return message.get("content")
             else:
                 st.session_state.query_status = "Error: Unexpected response format"
@@ -87,37 +81,22 @@ def call_llm_api(messages):
         return None
 
 
-def get_llm_response(messages):
-    response = call_llm_api(messages)
-    if response is None:
-        logger.error("Failed to get response from API")
-        return "Sorry, I couldn't process your request."
-    return response
-
-
 def chat_input_handler(prompt):
     if prompt:
-        # Immediately display user message
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Update both states
+        # Add user message to session state without displaying it here
         st.session_state.messages.append({"role": "user", "content": prompt})
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        st.session_state.selected_query = prompt
 
         try:
             response = call_llm_api(st.session_state.messages)
             if response:
-                with st.chat_message("assistant"):
-                    st.markdown(response)
+                # Add assistant's response to session state without displaying it here
                 st.session_state.messages.append({"role": "assistant", "content": response})
-                st.session_state.chat_history.append({"role": "assistant", "content": response})
                 st.session_state.query_status = "Success"
             else:
                 st.session_state.query_status = "Failed to get response"
         except Exception as e:
             st.session_state.query_status = f"Error: {str(e)}"
+
 
 # Display chat history
 def display_chat():
@@ -125,35 +104,28 @@ def display_chat():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# Single display of chat history
-display_chat()
-
 # Handle new input
 prompt = st.chat_input("Ask me about planning your calendar...")
 if prompt:
     chat_input_handler(prompt)
+    display_chat()  # Display chat history after processing the input
 
-
-# Remove status display section since we're using chat interface
+# Button section for additional queries
 def handle_button_click(prompt):
-    # Only display message once
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # Update state once
+    # Add user message to session state without displaying it here
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
+
     try:
         response = call_llm_api(st.session_state.messages)
         if response:
-            # Display response once
-            with st.chat_message("assistant"):
-                st.markdown(response)
+            # Add assistant's response to session state without displaying it here
             st.session_state.messages.append({"role": "assistant", "content": response})
     except Exception as e:
         logger.error(f"Error: {str(e)}")
+    display_chat()  # Display chat history after processing the button click
 
-# Button section only
+
+# Button section
 cols = st.columns(2)
 with cols[0]:
     if st.button("📝 Plan my work week", use_container_width=True):
@@ -161,4 +133,3 @@ with cols[0]:
 with cols[1]:
     if st.button("🎯 Optimize my schedule", use_container_width=True):
         handle_button_click("Please help me optimize my current schedule")
-
