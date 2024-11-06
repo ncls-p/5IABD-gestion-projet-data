@@ -28,20 +28,13 @@ LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
 
-# Initialize session state
+# Initialize all required session states
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {
-            "role": "system",
-            "content": """You are a helpful calendar planning assistant. Help users organize their weekly schedule.
-            Provide specific time slots and structured suggestions. Always maintain a professional tone.""",
-        }
+        {"role": "system", "content": "You are a helpful calendar planning assistant..."}
     ]
-
 if "query_status" not in st.session_state:
     st.session_state.query_status = ""
-if "selected_query" not in st.session_state:
-    st.session_state.selected_query = ""
 
 # Calendar context sidebar
 with st.sidebar:
@@ -75,8 +68,6 @@ def call_llm_api(messages):
             if "choices" in data and len(data["choices"]) > 0:
                 message = data["choices"][0].get("message", {})
                 st.session_state.query_status = "Success ✅"
-                with st.chat_message("assistant"):
-                    st.write(message.get("content"))
                 return message.get("content")
             else:
                 st.session_state.query_status = "Error: Unexpected response format"
@@ -90,39 +81,22 @@ def call_llm_api(messages):
         return None
 
 
-def get_llm_response(messages):
-    response = call_llm_api(messages)
-    if response is None:
-        logger.error("Failed to get response from API")
-        return "Sorry, I couldn't process your request."
-    return response
-
-
 def chat_input_handler(prompt):
-    if prompt and 'processing' not in st.session_state:
+    if prompt:
+        # Add user message to session state without displaying it here
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
         try:
-            # Set processing flag
-            st.session_state.processing = True
-
-            # Update messages state once
-            st.session_state.messages.append({"role": "user", "content": prompt})
-
-            # Get response
             response = call_llm_api(st.session_state.messages)
-
             if response:
+                # Add assistant's response to session state without displaying it here
                 st.session_state.messages.append({"role": "assistant", "content": response})
+                st.session_state.query_status = "Success"
             else:
-                error_msg = "I apologize, but I couldn't generate a response. Please try again."
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
+                st.session_state.query_status = "Failed to get response"
         except Exception as e:
-            logger.error(f"Error in chat_input_handler: {str(e)}")
-            error_msg = "Sorry, I encountered an error processing your request."
-            st.session_state.messages.append({"role": "assistant", "content": error_msg})
-        finally:
-            # Clear processing flag
-            st.session_state.processing = False
+            st.session_state.query_status = f"Error: {str(e)}"
+
 
 # Display chat history
 def display_chat():
@@ -130,38 +104,28 @@ def display_chat():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful calendar planning assistant..."}
-    ]
-
-# Single display of chat history
-display_chat()
-
 # Handle new input
 prompt = st.chat_input("Ask me about planning your calendar...")
 if prompt:
     chat_input_handler(prompt)
+    display_chat()  # Display chat history after processing the input
 
-
+# Button section for additional queries
 def handle_button_click(prompt):
-    logger.debug(f"Button clicked with prompt: {prompt}")
-    st.session_state.selected_query = prompt
+    # Add user message to session state without displaying it here
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     try:
-        response = get_llm_response(st.session_state.messages)
-        logger.debug(f"Response received: {response}")
+        response = call_llm_api(st.session_state.messages)
         if response:
+            # Add assistant's response to session state without displaying it here
             st.session_state.messages.append({"role": "assistant", "content": response})
     except Exception as e:
-        logger.error(f"Error in handle_button_click: {str(e)}")
+        logger.error(f"Error: {str(e)}")
+    display_chat()  # Display chat history after processing the button click
 
 
-# Update button section without status display
-st.markdown("---")
-st.caption("Suggested prompts:")
+# Button section
 cols = st.columns(2)
 with cols[0]:
     if st.button("📝 Plan my work week", use_container_width=True):
@@ -169,9 +133,3 @@ with cols[0]:
 with cols[1]:
     if st.button("🎯 Optimize my schedule", use_container_width=True):
         handle_button_click("Please help me optimize my current schedule")
-
-# Display query status
-if st.session_state.selected_query:
-    st.markdown("---")
-    st.write("**Selected Query:**", st.session_state.selected_query)
-    st.write("**Status:**", st.session_state.query_status)
