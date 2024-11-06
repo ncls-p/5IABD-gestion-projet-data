@@ -22,8 +22,8 @@ st.set_page_config(
 st.title("🗓️ Calendar Planning Assistant")
 
 # API setup
-LLM_API_URL = "https://owebui.nclsp.com/openai/chat/completions"
-MODEL_ID = "gemini-1.5-flash-latest"
+LLM_API_URL = os.getenv("LLM_API_URL")
+MODEL_ID = os.getenv("MODEL_ID")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
@@ -98,33 +98,51 @@ def get_llm_response(messages):
     return response
 
 
+def chat_input_handler(prompt):
+    if prompt and 'processing' not in st.session_state:
+        try:
+            # Set processing flag
+            st.session_state.processing = True
+
+            # Update messages state once
+            st.session_state.messages.append({"role": "user", "content": prompt})
+
+            # Get response
+            response = call_llm_api(st.session_state.messages)
+
+            if response:
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            else:
+                error_msg = "I apologize, but I couldn't generate a response. Please try again."
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+        except Exception as e:
+            logger.error(f"Error in chat_input_handler: {str(e)}")
+            error_msg = "Sorry, I encountered an error processing your request."
+            st.session_state.messages.append({"role": "assistant", "content": error_msg})
+        finally:
+            # Clear processing flag
+            st.session_state.processing = False
+
 # Display chat history
-def display_chat_history():
+def display_chat():
     for message in st.session_state.messages[1:]:  # Skip system message
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "system", "content": "You are a helpful calendar planning assistant..."}
+    ]
 
-# Main chat interface
-display_chat_history()
+# Single display of chat history
+display_chat()
 
-# Chat input
+# Handle new input
 prompt = st.chat_input("Ask me about planning your calendar...")
 if prompt:
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # Get assistant response
-    with st.chat_message("assistant"):
-        context = f"\nContext: Week starting from {selected_week}, {working_hours} working hours per day."
-        full_prompt = prompt + context
-
-        with st.spinner("Thinking..."):
-            response = get_llm_response(st.session_state.messages)
-            st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+    chat_input_handler(prompt)
 
 
 def handle_button_click(prompt):
