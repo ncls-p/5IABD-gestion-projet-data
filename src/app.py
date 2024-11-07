@@ -9,6 +9,9 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+
 # Environment variables
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "postgres")
@@ -22,15 +25,18 @@ LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
 
+# Set up logging
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
+
+# Define functions
 def get_system_message(selected_date):
     weekday = selected_date.strftime("%A")
-
     days_until_friday = 4 - selected_date.weekday()
     if days_until_friday < 0:
         days_until_friday = 0
     end_date = selected_date + timedelta(days=days_until_friday)
-
     return {
         "role": "system",
         "content": f"""You are a helpful calendar planning assistant.
@@ -46,53 +52,6 @@ def get_system_message(selected_date):
     }
 
 
-# Set up logging
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
-
-# App configuration
-st.set_page_config(
-    page_title="Calendar Planning Assistant", page_icon="📅", layout="centered"
-)
-st.title("🗓️ Calendar Planning Assistant")
-
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "system",
-            "content": "You are a helpful calendar planning assistant...",
-        }
-    ]
-# API setup
-LLM_API_URL = os.getenv("LLM_API_URL")
-MODEL_ID = os.getenv("MODEL_ID")
-LLM_API_KEY = os.getenv("LLM_API_KEY")
-
-headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
-
-# Modify the session state initialization
-if "messages" not in st.session_state:
-    st.session_state.messages = [get_system_message(datetime.now())]
-if "query_status" not in st.session_state:
-    st.session_state.query_status = ""
-
-# Calendar context sidebar
-with st.sidebar:
-    st.header("Calendar Context")
-    selected_week = st.date_input("Select Week Starting From:", datetime.now())
-    # Update system message when date changes
-    st.session_state.messages[0] = get_system_message(selected_week)
-    working_hours = st.slider("Working Hours per Day:", 4, 12, 8)
-    st.divider()
-    if st.button("Clear Conversation"):
-        st.session_state.messages = [
-            st.session_state.messages[0]
-        ]  # Keep system message
-
 # Define functions for LLM
 functions = [
     {
@@ -101,10 +60,7 @@ functions = [
         "parameters": {
             "type": "object",
             "properties": {
-                "event_name": {
-                    "type": "string",
-                    "description": "Name of the event",
-                },
+                "event_name": {"type": "string", "description": "Name of the event"},
                 "event_description": {
                     "type": "string",
                     "description": "Description of the event",
@@ -124,21 +80,13 @@ functions = [
                     "description": "Location of the event",
                 },
             },
-            "required": [
-                "event_name",
-                "event_start_date_time",
-                "event_end_date_time",
-            ],
+            "required": ["event_name", "event_start_date_time", "event_end_date_time"],
         },
     },
     {
         "name": "get_events",
         "description": "Get all calendar events",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
+        "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "delete_event",
@@ -149,7 +97,7 @@ functions = [
                 "event_id": {
                     "type": "integer",
                     "description": "ID of the event to delete",
-                },
+                }
             },
             "required": ["event_id"],
         },
@@ -162,7 +110,6 @@ def call_llm_api(messages):
     if not LLM_API_URL:
         st.session_state.query_status = "Error: LLM API URL is not configured"
         return None
-
     try:
         payload = {
             "model": MODEL_ID,
@@ -171,26 +118,20 @@ def call_llm_api(messages):
             "function_call": "auto",
             "stream": False,
         }
-
         logger.debug(f"API Request URL: {LLM_API_URL}")
         logger.debug(f"Request Payload: {json.dumps(payload, indent=2)}")
-
         with st.spinner("Getting response..."):
             response = requests.post(
                 LLM_API_URL, headers=headers, json=payload, timeout=300
             )
-
         if response.status_code != 200:
             st.session_state.query_status = f"Error: {response.text}"
             return None
-
         data = response.json()
-        print(data)
         if "choices" in data and len(data["choices"]) > 0:
             choice = data["choices"][0]
             message = choice.get("message", {})
             finish_reason = choice.get("finish_reason", "")
-
             if finish_reason == "function_call":
                 # Assistant is requesting a function call
                 function_call = message.get("function_call", {})
@@ -236,7 +177,6 @@ def call_llm_api(messages):
         else:
             st.session_state.query_status = "Error: Unexpected response format"
             return None
-
     except requests.exceptions.Timeout:
         st.session_state.query_status = "Error: Request timed out"
         return None
@@ -341,33 +281,6 @@ def get_events():
     return events
 
 
-# Get database structure
-def get_db_structure():
-    conn = create_postgres_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT
-            table_name,
-            column_name,
-            data_type
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-    """)
-    columns = cur.fetchall()
-    conn.close()
-    return columns
-
-
-def db_structure_as_string():
-    columns = get_db_structure()
-    return "\n".join(
-        [
-            f"{table_name}: {column_name} ({data_type})"
-            for table_name, column_name, data_type in columns
-        ]
-    )
-
-
 # Insert event into database
 def insert_event(
     event_name,
@@ -396,45 +309,79 @@ def insert_event(
     return {"status": "success", "message": "Event inserted successfully"}
 
 
+# Export to ICS function
+def export_to_ics(messages):
+    # Remove system message and format chat history
+    chat_history = [msg for msg in messages[1:]]
+    calendar_prompt = {
+        "role": "user",
+        "content": "Convert the above chat into an ICS calendar format. Respond ONLY with the ICS content, no markdown.",
+    }
+    # Add conversion request to messages
+    conversion_messages = chat_history + [calendar_prompt]
+    # Get ICS content from LLM
+    ics_content = call_llm_api(conversion_messages)
+    if ics_content:
+        # Clean up the response - remove any markdown or extra text
+        ics_content = ics_content.strip()
+        if "```" in ics_content:
+            ics_content = ics_content.split("```")[1]
+        # Create download button
+        st.download_button(
+            label="Download Calendar (ICS)",
+            data=ics_content,
+            file_name="schedule.ics",
+            mime="text/calendar",
+        )
+
+
+# App configuration
+st.set_page_config(
+    page_title="Calendar Planning Assistant", page_icon="📅", layout="centered"
+)
+st.title("🗓️ Calendar Planning Assistant")
+
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = [get_system_message(datetime.now())]
+if "query_status" not in st.session_state:
+    st.session_state.query_status = ""
+
+# Ensure the database table exists
+create_table()
+
+# Calendar context sidebar
+with st.sidebar:
+    st.header("Calendar Context")
+    selected_week = st.date_input("Select Week Starting From:", datetime.now())
+    # Update system message when date changes
+    st.session_state.messages[0] = get_system_message(selected_week)
+    working_hours = st.slider("Working Hours per Day:", 4, 12, 8)
+    st.divider()
+    if st.button("Clear Conversation"):
+        st.session_state.messages = [
+            st.session_state.messages[0]
+        ]  # Keep system message
+
 # Handle new input
 prompt = st.chat_input("Ask me about planning your calendar...")
 if prompt:
     chat_input_handler(prompt)
     display_chat()  # Display chat history after processing the input
 
-
-# Button section for additional queries
-def handle_button_click(prompt):
-    # Add user message to session state without displaying it here
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    try:
-        response = call_llm_api(st.session_state.messages)
-        if response:
-            # Add assistant's response to session state
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            display_chat()  # Show updated chat history
-    except Exception as e:
-        st.session_state.query_status = f"Error: {str(e)}"
-        st.error(f"An error occurred: {str(e)}")
-
-    # Force streamlit to rerun and update the UI
-    st.rerun()
-
-
 # Button section
 cols = st.columns(2)
 with cols[0]:
     if st.button("📝 Plan my work week", use_container_width=True):
-        handle_button_click("Please help me plan my work week effectively")
+        chat_input_handler("Please help me plan my work week effectively")
+        display_chat()
 with cols[1]:
     if st.button("🎯 Optimize my schedule", use_container_width=True):
-        handle_button_click("Please help me optimize my current schedule")
-
+        chat_input_handler("Please help me optimize my current schedule")
+        display_chat()
 
 # Expanders for events and database structure
 with st.expander("📅 View Calendar Events"):
-    create_table()
     events = get_events()
     if events:
         for event in events:
@@ -450,37 +397,6 @@ with st.expander("📅 View Calendar Events"):
     else:
         st.write("No events found")
 
-
-def export_to_ics(messages):
-    # Remove system message and format chat history
-    chat_history = [msg for msg in messages[1:]]
-
-    calendar_prompt = {
-        "role": "user",
-        "content": "Convert the above chat into an ICS calendar format. Respond ONLY with the ICS content, no markdown.",
-    }
-
-    # Add conversion request to messages
-    conversion_messages = chat_history + [calendar_prompt]
-
-    # Get ICS content from LLM
-    ics_content = call_llm_api(conversion_messages)
-
-    if ics_content:
-        # Clean up the response - remove any markdown or extra text
-        ics_content = ics_content.strip()
-        if "```" in ics_content:
-            ics_content = ics_content.split("```")[1]
-
-        # Create download button
-        st.download_button(
-            label="Download Calendar (ICS)",
-            data=ics_content,
-            file_name="schedule.ics",
-            mime="text/calendar",
-        )
-
-
-# Add this button to your UI
+# Export calendar to ICS
 if st.button("Export to Calendar"):
     export_to_ics(st.session_state.messages)
