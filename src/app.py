@@ -140,6 +140,20 @@ functions = [
             "required": [],
         },
     },
+    {
+        "name": "delete_event",
+        "description": "Delete a calendar event",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event_id": {
+                    "type": "integer",
+                    "description": "ID of the event to delete",
+                },
+            },
+            "required": ["event_id"],
+        },
+    },
 ]
 
 
@@ -189,6 +203,8 @@ def call_llm_api(messages):
                     function_response = insert_event(**arguments)
                 elif function_name == "get_events":
                     function_response = get_events()
+                elif function_name == "delete_event":
+                    function_response = delete_event(**arguments)
                 else:
                     st.session_state.query_status = (
                         f"Error: Unknown function {function_name}"
@@ -287,6 +303,21 @@ def create_table():
     conn.close()
 
 
+def delete_event(event_id):
+    conn = create_postgres_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        DELETE FROM calendar_events
+        WHERE id = %s
+        """,
+        (event_id,),
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": "Event deleted successfully"}
+
+
 # Get events from database
 def get_events():
     conn = create_postgres_connection()
@@ -365,11 +396,6 @@ def insert_event(
     return {"status": "success", "message": "Event inserted successfully"}
 
 
-# Display chat input
-prompt = st.chat_input("Ask me about planning your calendar...")
-if prompt:
-    chat_input_handler(prompt)
-    display_chat()
 # Handle new input
 prompt = st.chat_input("Ask me about planning your calendar...")
 if prompt:
@@ -385,11 +411,15 @@ def handle_button_click(prompt):
     try:
         response = call_llm_api(st.session_state.messages)
         if response:
-            # Add assistant's response to session state without displaying it here
+            # Add assistant's response to session state
             st.session_state.messages.append({"role": "assistant", "content": response})
+            display_chat()  # Show updated chat history
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-    display_chat()  # Display chat history after processing the button click
+        st.session_state.query_status = f"Error: {str(e)}"
+        st.error(f"An error occurred: {str(e)}")
+
+    # Force streamlit to rerun and update the UI
+    st.rerun()
 
 
 # Button section
@@ -401,19 +431,56 @@ with cols[1]:
     if st.button("🎯 Optimize my schedule", use_container_width=True):
         handle_button_click("Please help me optimize my current schedule")
 
-with cols[0]:
-    if st.button("Show db structure", use_container_width=True):
-        handle_button_click("Show me the database structure")
 
 # Expanders for events and database structure
 with st.expander("📅 View Calendar Events"):
     create_table()
     events = get_events()
     if events:
-        st.table(events)
+        for event in events:
+            col1, col2 = st.columns([8, 1])
+            with col1:
+                st.write(
+                    f"**{event['event_name']}** from {event['event_start_date_time']} to {event['event_end_date_time']}"
+                )
+            with col2:
+                if st.button("Delete", key=event["id"]):
+                    delete_event(event["id"])
+                    st.success("Event deleted successfully")
     else:
         st.write("No events found")
 
-with st.expander("📊 Database Structure"):
-    tables = db_structure_as_string()
-    st.write(tables)
+
+def export_to_ics(messages):
+    # Remove system message and format chat history
+    chat_history = [msg for msg in messages[1:]]
+
+    calendar_prompt = {
+        "role": "user",
+        "content": "Convert the above chat into an ICS calendar format. Respond ONLY with the ICS content, no markdown.",
+    }
+
+    # Add conversion request to messages
+    conversion_messages = chat_history + [calendar_prompt]
+
+    # Get ICS content from LLM
+    ics_content = call_llm_api(conversion_messages)
+
+    if ics_content:
+        # Clean up the response - remove any markdown or extra text
+        ics_content = ics_content.strip()
+        if "```" in ics_content:
+            ics_content = ics_content.split("```")[1]
+
+        # Create download button
+        st.download_button(
+            label="Download Calendar (ICS)",
+            data=ics_content,
+            file_name="schedule.ics",
+            mime="text/calendar",
+        )
+
+
+# Add this button to your UI
+if st.button("Export to Calendar"):
+    export_to_ics(st.session_state.messages)
