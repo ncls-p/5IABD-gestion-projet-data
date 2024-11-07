@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import psycopg2
 import requests
@@ -21,6 +21,30 @@ MODEL_ID = os.getenv("MODEL_ID")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
+
+
+def get_system_message(selected_date):
+    weekday = selected_date.strftime("%A")
+
+    days_until_friday = 4 - selected_date.weekday()
+    if days_until_friday < 0:
+        days_until_friday = 0
+    end_date = selected_date + timedelta(days=days_until_friday)
+
+    return {
+        "role": "system",
+        "content": f"""You are a helpful calendar planning assistant.
+        The user is planning their calendar:
+        - Start date: {selected_date.strftime('%Y-%m-%d')} ({weekday})
+        - End date: {end_date.strftime('%Y-%m-%d')} (Friday)
+        Important scheduling rules:
+        - Begin precisely from {weekday}, {selected_date.strftime('%Y-%m-%d')}
+        - End strictly on {end_date.strftime('%Y-%m-%d')}
+        - Don't generate any events beyond this Friday
+        - Format all dates and times in ISO format (YYYY-MM-DD HH:mm)
+        - Only schedule within this specific work week period""",
+    }
+
 
 # Set up logging
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
@@ -43,6 +67,16 @@ if "messages" not in st.session_state:
             "content": "You are a helpful calendar planning assistant...",
         }
     ]
+# API setup
+LLM_API_URL = os.getenv("LLM_API_URL")
+MODEL_ID = os.getenv("MODEL_ID")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+
+headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
+
+# Modify the session state initialization
+if "messages" not in st.session_state:
+    st.session_state.messages = [get_system_message(datetime.now())]
 if "query_status" not in st.session_state:
     st.session_state.query_status = ""
 
@@ -50,6 +84,8 @@ if "query_status" not in st.session_state:
 with st.sidebar:
     st.header("Calendar Context")
     selected_week = st.date_input("Select Week Starting From:", datetime.now())
+    # Update system message when date changes
+    st.session_state.messages[0] = get_system_message(selected_week)
     working_hours = st.slider("Working Hours per Day:", 4, 12, 8)
     st.divider()
     if st.button("Clear Conversation"):
@@ -201,7 +237,7 @@ def chat_input_handler(prompt):
         try:
             response = call_llm_api(st.session_state.messages)
             if response:
-                # Add assistant's response to session state
+                # Add assistant's response to session state without displaying it here
                 st.session_state.messages.append(
                     {"role": "assistant", "content": response}
                 )
@@ -217,12 +253,6 @@ def display_chat():
     for message in st.session_state.messages[1:]:  # Skip system message
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-
-
-# Button click handler
-def handle_button_click(prompt):
-    chat_input_handler(prompt)
-    display_chat()  # Display chat history after processing the button click
 
 
 # Database connection
@@ -340,6 +370,27 @@ prompt = st.chat_input("Ask me about planning your calendar...")
 if prompt:
     chat_input_handler(prompt)
     display_chat()
+# Handle new input
+prompt = st.chat_input("Ask me about planning your calendar...")
+if prompt:
+    chat_input_handler(prompt)
+    display_chat()  # Display chat history after processing the input
+
+
+# Button section for additional queries
+def handle_button_click(prompt):
+    # Add user message to session state without displaying it here
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    try:
+        response = call_llm_api(st.session_state.messages)
+        if response:
+            # Add assistant's response to session state without displaying it here
+            st.session_state.messages.append({"role": "assistant", "content": response})
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+    display_chat()  # Display chat history after processing the button click
+
 
 # Button section
 cols = st.columns(2)
