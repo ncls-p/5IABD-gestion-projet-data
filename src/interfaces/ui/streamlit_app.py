@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import requests
 import streamlit as st
+from streamlit_calendar import calendar
 import logging
 import json
 from src.core.logger import setup_logger
@@ -168,6 +169,70 @@ def display_events() -> None:
     else:
         st.error("Failed to fetch events")
 
+def display_events_calendar() -> None:
+    response = requests.get(f"{BACKEND_URL}/events")
+    if response.status_code == 200:
+        events = response.json()
+        if events:
+            calendar_events = format_events_for_calendar(events)
+            calendar_options = {
+                "initialDate": "2024-11-13",
+                "editable": "false",
+                "selectable": "true",
+                "headerToolbar": {
+                    "left": "today prev,next",
+                    "center": "title",
+                    "right": "resourceTimelineDay,resourceTimelineWeek,resourceTimelineMonth",
+                },
+                "slotMinTime": "06:00:00",
+                "slotMaxTime": "23:00:00",
+                "initialView": "timeGridWeek",
+                "resourceGroupField": "building",
+                "resources": [
+                    {"id": "a", "building": "Building A", "title": "Building A"},
+                    {"id": "b", "building": "Building A", "title": "Building B"},
+                    {"id": "c", "building": "Building B", "title": "Building C"},
+                    {"id": "d", "building": "Building B", "title": "Building D"},
+                    {"id": "e", "building": "Building C", "title": "Building E"},
+                    {"id": "f", "building": "Building C", "title": "Building F"},
+                ]
+            }
+            css= """
+                .fc-event-past {
+                    opacity: 0.8;
+                }
+                .fc-event-time {
+                    font-style: italic;
+                }
+                .fc-event-title {
+                    font-weight: 700;
+                }
+                .fc-toolbar-title {
+                    font-size: 2rem;
+                }
+            """
+            
+            cal = calendar(events=calendar_events, options=calendar_options, custom_css=css)
+
+            st.write(cal)
+
+        else:
+            st.write("No events found")
+    else:
+        st.error("Failed to fetch events")
+
+def format_events_for_calendar(events):
+    formatted_events = []
+    for event in events:
+        start = event["event_start_date_time"]
+        end = event["event_end_date_time"]
+        formatted_events.append({
+            "title": event["event_name"],
+            "start": start,
+            "end": end,
+            "ressourceId": "a",
+        })
+    return formatted_events
 
 def get_llm_functions() -> list:
     return [
@@ -296,6 +361,9 @@ def main():
     with st.expander("📅 View Calendar Events"):
         display_events()
 
+    # Calendar view
+    with st.expander("📅 Calendar View"):
+        display_events_calendar()
     # Export calendar
     if st.button("Export to Calendar"):
         response = requests.post(
