@@ -157,31 +157,35 @@ def set_custom_style():
         """
         <style>
         /* Import Google Font */
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
         /* Apply font */
         html, body, [class*="css"]  {
-            font-family: 'Roboto', sans-serif;
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
         }
 
         /* Main container */
         .main {
-            padding: 1rem;
-            background-color: #f9fafb;
+            padding: 2rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         /* Header */
         h1, h2, h3, h4, h5, h6 {
-            color: #1f2937;
+            color: #111827;
+            font-weight: 600;
         }
 
         /* Chat messages */
         .stChatMessage {
-            background-color: #ffffff;
-            border-radius: 12px;
+            background-color: #f9fafb;
+            border-radius: 16px;
             padding: 1rem;
             margin: 0.5rem 0;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
 
         /* Buttons */
@@ -190,61 +194,59 @@ def set_custom_style():
             border: none;
             background-color: #2563eb;
             color: white;
-            padding: 0.6rem 1rem;
+            padding: 0.75rem 1.25rem;
             font-weight: 500;
-            transition: background-color 0.3s ease, transform 0.2s ease;
+            transition: background-color 0.3s ease, box-shadow 0.2s ease;
         }
 
         .stButton button:hover {
             background-color: #1d4ed8;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1);
         }
 
         /* Event cards */
         .event-card {
-            background: white;
-            border-radius: 10px;
-            padding: 1rem;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 1.5rem;
             margin: 1rem 0;
-            border-left: 4px solid #2563eb;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 5px solid #2563eb;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.05);
             transition: transform 0.2s ease;
         }
 
         .event-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1);
         }
 
         /* Responsive layout */
         @media (max-width: 768px) {
-            .block-container {
+            .main {
                 padding: 1rem;
             }
-            .stCols {
-                flex-direction: column;
+            .stContainer {
+                padding: 0;
+            }
+            .stButton button {
+                width: 100%;
             }
         }
 
         /* Dark mode */
         @media (prefers-color-scheme: dark) {
-            body {
-                background-color: #111827;
-                color: #f9fafb;
+            html, body, [class*="css"]  {
+                background-color: #1a202c;
+                color: #e2e8f0;
             }
             .main {
-                background-color: #1f2937;
-            }
-            h1, h2, h3, h4, h5, h6 {
-                color: #f9fafb;
+                background-color: #2d3748;
             }
             .stChatMessage {
-                background-color: #374151;
-                color: #f9fafb;
+                background-color: #4a5568;
             }
             .event-card {
-                background-color: #374151;
+                background-color: #4a5568;
                 border-left-color: #3b82f6;
             }
             .stButton button {
@@ -254,8 +256,32 @@ def set_custom_style():
                 background-color: #2563eb;
             }
         }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .main {
+                padding: 1rem;
+            }
+            .stButton button {
+                width: 100%;
+                margin-bottom: 0.5rem;
+            }
+            .stChatMessage {
+                padding: 0.75rem;
+                margin: 0.25rem 0;
+            }
+            .event-card {
+                padding: 1rem;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+            h2, h3 {
+                font-size: 1.25rem;
+            }
+        }
         </style>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
@@ -265,7 +291,7 @@ def display_events() -> None:
     if response.status_code == 200:
         events = response.json()
         if events:
-            # Map events to the format expected by streamlit_calendar
+            # Map events to the format expected by st_fullcalendar
             calendar_events = [
                 {
                     "title": event["event_name"],
@@ -276,9 +302,10 @@ def display_events() -> None:
                 for event in events
             ]
 
-            # Define calendar options
+            # Define calendar options with initialDate
             calendar_options = {
                 "initialView": "timeGridWeek",
+                "initialDate": st.session_state.selected_date.strftime("%Y-%m-%d"),
                 "editable": True,
                 "selectable": True,
                 "headerToolbar": {
@@ -288,29 +315,11 @@ def display_events() -> None:
                 },
                 "slotMinTime": "06:00:00",
                 "slotMaxTime": "22:00:00",
+                # Include any other FullCalendar options you need
             }
 
-            # Custom CSS for calendar styling
-            custom_css = """
-                .fc-event-past {
-                    opacity: 0.8;
-                }
-                .fc-event-time {
-                    font-style: italic;
-                }
-                .fc-event-title {
-                    font-weight: 700;
-                }
-                .fc-toolbar-title {
-                    font-size: 1.5rem;
-                }
-            """
-
-            # Render the calendar
-            calendar_component = calendar(
-                events=calendar_events, options=calendar_options, custom_css=custom_css
-            )
-            st.write(calendar_component)
+            # Render the calendar using st_fullcalendar
+            calendar(calendar_events, calendar_options)
         else:
             st.info("No events to display.")
     else:
@@ -383,7 +392,6 @@ def main():
         page_icon="📅",
         layout="wide",
         initial_sidebar_state="expanded",
-        # Removed 'theme' parameter
     )
 
     set_custom_style()
@@ -396,61 +404,68 @@ def main():
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = datetime.now()
 
-    # Chat input at root level
+    # Place chat input at the root level
     prompt = st.chat_input("How can I assist you with your calendar?")
     if prompt:
         with st.spinner("Processing your request..."):
             chat_input_handler(prompt)
 
-    # Layout with columns
-    left_col, right_col = st.columns([2, 1], gap="large")
-
-    with left_col:
+    # Use a container for the main content
+    with st.container():
         st.title("🗓️ Calendar Planning Assistant")
 
-        # Chat interface
-        st.markdown("### 💬 Chat")
-        display_chat()
+        # Create responsive columns
+        left_col, right_col = st.columns([3, 2], gap="large")
 
-    with right_col:
-        st.markdown("### 📅 Calendar Events")
-        # Quick actions
-        col1, col2 = st.columns(2, gap="small")
-        with col1:
-            if st.button(
-                "📝 Plan Week",
-                help="Plan your work week efficiently",
-                use_container_width=True,
-            ):
-                with st.spinner("Planning your week..."):
-                    chat_input_handler("Please help me plan my work week effectively")
-        with col2:
-            if st.button(
-                "🎯 Optimize Schedule",
-                help="Optimize your current schedule",
-                use_container_width=True,
-            ):
-                with st.spinner("Optimizing schedule..."):
-                    chat_input_handler("Please help me optimize my current schedule")
+        with left_col:
+            st.markdown("### 💬 Chat")
+            display_chat()
 
-        # Calendar view
-        display_events()
+        with right_col:
+            st.markdown("### 📅 Calendar Events")
 
-        # Export button
-        if st.button("📤 Export Calendar", use_container_width=True):
-            with st.spinner("Preparing calendar export..."):
-                response = requests.post(
-                    f"{BACKEND_URL}/export-ics", json=st.session_state.messages
-                )
-                if response.status_code == 200:
-                    st.download_button(
-                        label="⬇️ Download ICS",
-                        data=response.text,
-                        file_name="schedule.ics",
-                        mime="text/calendar",
-                        use_container_width=True,
+            # Quick actions
+            col1, col2 = st.columns(2, gap="small")
+            with col1:
+                if st.button(
+                    "📝 Plan Week",
+                    help="Plan your work week efficiently",
+                    use_container_width=True,
+                ):
+                    with st.spinner("Planning your week..."):
+                        chat_input_handler(
+                            "Please help me plan my work week effectively"
+                        )
+            with col2:
+                if st.button(
+                    "🎯 Optimize Schedule",
+                    help="Optimize your current schedule",
+                    use_container_width=True,
+                ):
+                    with st.spinner("Optimizing schedule..."):
+                        chat_input_handler(
+                            "Please help me optimize my current schedule"
+                        )
+
+            # Display calendar events
+            display_events()
+
+            # Export button
+            if st.button("📤 Export Calendar", use_container_width=True):
+                with st.spinner("Preparing calendar export..."):
+                    response = requests.post(
+                        f"{BACKEND_URL}/export-ics", json=st.session_state.messages
                     )
+                    if response.status_code == 200:
+                        st.download_button(
+                            label="⬇️ Download ICS",
+                            data=response.text,
+                            file_name="schedule.ics",
+                            mime="text/calendar",
+                            use_container_width=True,
+                        )
 
+    # Sidebar remains as is
     # Sidebar
     with st.sidebar:
         st.markdown("### ⚙️ Settings")
