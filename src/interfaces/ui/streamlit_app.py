@@ -1,8 +1,10 @@
+import json
 from datetime import datetime, timedelta
+
 import requests
 import streamlit as st
-import logging
-import json
+from streamlit_calendar import calendar
+
 from src.core.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -41,7 +43,7 @@ def chat_input_handler(prompt: str) -> None:
                 json={
                     "messages": st.session_state.messages,
                     "selected_date": st.session_state.selected_date.isoformat(),
-                    "functions": get_llm_functions(),  # Add functions to request
+                    "functions": get_llm_functions(),
                 },
             )
 
@@ -57,6 +59,7 @@ def chat_input_handler(prompt: str) -> None:
 
 
 def handle_chat_response(data: dict) -> None:
+    logger.debug(f"Assistant Response: {data}")
     if "choices" in data and len(data["choices"]) > 0:
         choice = data["choices"][0]
         message = choice.get("message", {})
@@ -149,22 +152,167 @@ def display_chat() -> None:
             st.markdown(message["content"])
 
 
+def set_custom_style():
+    st.markdown(
+        """
+        <style>
+        /* Import Google Font */
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+        /* Apply font */
+        html, body, [class*="css"]  {
+            font-family: 'Roboto', sans-serif;
+        }
+
+        /* Main container */
+        .main {
+            padding: 1rem;
+            background-color: #f9fafb;
+        }
+
+        /* Header */
+        h1, h2, h3, h4, h5, h6 {
+            color: #1f2937;
+        }
+
+        /* Chat messages */
+        .stChatMessage {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        /* Buttons */
+        .stButton button {
+            border-radius: 8px;
+            border: none;
+            background-color: #2563eb;
+            color: white;
+            padding: 0.6rem 1rem;
+            font-weight: 500;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        .stButton button:hover {
+            background-color: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Event cards */
+        .event-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-left: 4px solid #2563eb;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: transform 0.2s ease;
+        }
+
+        .event-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Responsive layout */
+        @media (max-width: 768px) {
+            .block-container {
+                padding: 1rem;
+            }
+            .stCols {
+                flex-direction: column;
+            }
+        }
+
+        /* Dark mode */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #111827;
+                color: #f9fafb;
+            }
+            .main {
+                background-color: #1f2937;
+            }
+            h1, h2, h3, h4, h5, h6 {
+                color: #f9fafb;
+            }
+            .stChatMessage {
+                background-color: #374151;
+                color: #f9fafb;
+            }
+            .event-card {
+                background-color: #374151;
+                border-left-color: #3b82f6;
+            }
+            .stButton button {
+                background-color: #3b82f6;
+            }
+            .stButton button:hover {
+                background-color: #2563eb;
+            }
+        }
+        </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+
 def display_events() -> None:
     response = requests.get(f"{BACKEND_URL}/events")
     if response.status_code == 200:
         events = response.json()
         if events:
-            for event in events:
-                col1, col2 = st.columns([8, 1])
-                with col1:
-                    st.write(
-                        f"**{event['event_name']}** from {event['event_start_date_time']} to {event['event_end_date_time']}"
-                    )
-                with col2:
-                    if st.button("Delete", key=f"delete_{event['id']}"):
-                        chat_input_handler(f"Delete event with ID {event['id']}")
+            # Map events to the format expected by streamlit_calendar
+            calendar_events = [
+                {
+                    "title": event["event_name"],
+                    "start": event["event_start_date_time"],
+                    "end": event["event_end_date_time"],
+                    # Include additional fields if necessary
+                }
+                for event in events
+            ]
+
+            # Define calendar options
+            calendar_options = {
+                "initialView": "timeGridWeek",
+                "editable": True,
+                "selectable": True,
+                "headerToolbar": {
+                    "left": "prev,next today",
+                    "center": "title",
+                    "right": "dayGridMonth,timeGridWeek,timeGridDay",
+                },
+                "slotMinTime": "06:00:00",
+                "slotMaxTime": "22:00:00",
+            }
+
+            # Custom CSS for calendar styling
+            custom_css = """
+                .fc-event-past {
+                    opacity: 0.8;
+                }
+                .fc-event-time {
+                    font-style: italic;
+                }
+                .fc-event-title {
+                    font-weight: 700;
+                }
+                .fc-toolbar-title {
+                    font-size: 1.5rem;
+                }
+            """
+
+            # Render the calendar
+            calendar_component = calendar(
+                events=calendar_events, options=calendar_options, custom_css=custom_css
+            )
+            st.write(calendar_component)
         else:
-            st.write("No events found")
+            st.info("No events to display.")
     else:
         st.error("Failed to fetch events")
 
@@ -231,9 +379,14 @@ def get_llm_functions() -> list:
 
 def main():
     st.set_page_config(
-        page_title="Calendar Planning Assistant", page_icon="📅", layout="centered"
+        page_title="Calendar Planning Assistant",
+        page_icon="📅",
+        layout="wide",
+        initial_sidebar_state="expanded",
+        # Removed 'theme' parameter
     )
-    st.title("🗓️ Calendar Planning Assistant")
+
+    set_custom_style()
 
     # Initialize session state
     if "messages" not in st.session_state:
@@ -243,71 +396,89 @@ def main():
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = datetime.now()
 
+    # Chat input at root level
+    prompt = st.chat_input("How can I assist you with your calendar?")
+    if prompt:
+        with st.spinner("Processing your request..."):
+            chat_input_handler(prompt)
+
+    # Layout with columns
+    left_col, right_col = st.columns([2, 1], gap="large")
+
+    with left_col:
+        st.title("🗓️ Calendar Planning Assistant")
+
+        # Chat interface
+        st.markdown("### 💬 Chat")
+        display_chat()
+
+    with right_col:
+        st.markdown("### 📅 Calendar Events")
+        # Quick actions
+        col1, col2 = st.columns(2, gap="small")
+        with col1:
+            if st.button(
+                "📝 Plan Week",
+                help="Plan your work week efficiently",
+                use_container_width=True,
+            ):
+                with st.spinner("Planning your week..."):
+                    chat_input_handler("Please help me plan my work week effectively")
+        with col2:
+            if st.button(
+                "🎯 Optimize Schedule",
+                help="Optimize your current schedule",
+                use_container_width=True,
+            ):
+                with st.spinner("Optimizing schedule..."):
+                    chat_input_handler("Please help me optimize my current schedule")
+
+        # Calendar view
+        display_events()
+
+        # Export button
+        if st.button("📤 Export Calendar", use_container_width=True):
+            with st.spinner("Preparing calendar export..."):
+                response = requests.post(
+                    f"{BACKEND_URL}/export-ics", json=st.session_state.messages
+                )
+                if response.status_code == 200:
+                    st.download_button(
+                        label="⬇️ Download ICS",
+                        data=response.text,
+                        file_name="schedule.ics",
+                        mime="text/calendar",
+                        use_container_width=True,
+                    )
+
     # Sidebar
     with st.sidebar:
-        st.header("Calendar Context")
+        st.markdown("### ⚙️ Settings")
         selected_week = st.date_input(
-            "Select Week Starting From:", datetime.now().date(), key="date_picker"
+            "Week Starting From:", datetime.now().date(), key="date_picker"
         )
 
-        # Gérer les différents types de retour possibles de date_input
+        # Improved date input handling
         if isinstance(selected_week, tuple):
-            if len(selected_week) > 0:
-                selected_date = selected_week[
-                    0
-                ]  # Prendre la première date si c'est un tuple
-            else:
-                selected_date = (
-                    datetime.now().date()
-                )  # Fallback sur aujourd'hui si tuple vide
+            # Handle tuple case (multiple dates selected)
+            selected_date = (
+                selected_week[0] if len(selected_week) > 0 else datetime.now().date()
+            )
         else:
-            selected_date = selected_week  # Si c'est une seule date
+            # Handle single date case
+            selected_date = (
+                selected_week if selected_week is not None else datetime.now().date()
+            )
 
-        # S'assurer que selected_date n'est pas None
-        if selected_date is None:
-            selected_date = datetime.now().date()
-
-        # Convertir en datetime
+        # Now selected_date is guaranteed to be a date object
         selected_datetime = datetime.combine(selected_date, datetime.min.time())
         st.session_state.selected_date = selected_datetime
         st.session_state.messages[0] = get_system_message(selected_datetime)
+
         st.divider()
-        if st.button("Clear Conversation"):
+        if st.button("🗑️ Clear Chat History", use_container_width=True):
             st.session_state.messages = [st.session_state.messages[0]]
-
-    # Chat input
-    prompt = st.chat_input("Ask me about planning your calendar...")
-    if prompt:
-        chat_input_handler(prompt)
-
-    # Display chat
-    display_chat()
-
-    # Action buttons
-    cols = st.columns(2)
-    with cols[0]:
-        if st.button("📝 Plan my work week", use_container_width=True):
-            chat_input_handler("Please help me plan my work week effectively")
-    with cols[1]:
-        if st.button("🎯 Optimize my schedule", use_container_width=True):
-            chat_input_handler("Please help me optimize my current schedule")
-
-    # Events view
-    with st.expander("📅 View Calendar Events"):
-        display_events()
-
-    # Export calendar
-    if st.button("Export to Calendar"):
-        response = requests.post(
-            f"{BACKEND_URL}/export-ics", json=st.session_state.messages
-        )
-        if response.status_code == 200:
-            st.download_button(
-                label="Download Calendar (ICS)",
-                data=response.text,
-                file_name="schedule.ics",
-                mime="text/calendar",
-            )
+            st.experimental_rerun()
 
 
 if __name__ == "__main__":
