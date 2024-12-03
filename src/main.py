@@ -1,7 +1,8 @@
 from fastapi import FastAPI
-from src.interfaces.api.routes import events, chat
-from src.infrastructure.database.postgres import PostgresEventRepository
-from src.core.logger import setup_logger
+# Fix relative imports
+from .interfaces.api.routes import events, chat
+from .infrastructure.database.postgres import PostgresEventRepository
+from .core.logger import setup_logger
 
 logger = setup_logger(__name__)
 

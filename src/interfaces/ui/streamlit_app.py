@@ -19,6 +19,16 @@ def get_system_message(selected_date: datetime) -> dict:
         days_until_friday = 0
     end_date = selected_date + timedelta(days=days_until_friday)
 
+    split_instruction = (
+        """
+        - When enabled, always split any event longer than 2 hours into smaller tasks
+        - Each task should be between 30 minutes and 2 hours
+        - Break down events logically based on their description
+        """
+        if st.session_state.get("enable_event_splitting", False)
+        else ""
+    )
+
     return {
         "role": "system",
         "content": f"""You are a helpful calendar planning assistant.
@@ -30,7 +40,8 @@ def get_system_message(selected_date: datetime) -> dict:
         - End strictly on {end_date.strftime('%Y-%m-%d')}
         - Don't generate any events beyond this Friday
         - Format all dates and times in ISO format (YYYY-MM-DD HH:mm)
-        - Only schedule within this specific work week period""",
+        - Only schedule within this specific work week period
+        {split_instruction}""",
     }
 
 
@@ -87,23 +98,64 @@ def handle_function_call(function_call: dict) -> None:
         handle_delete_event(arguments)
     elif function_name == "get_events":
         handle_get_events()
+    elif function_name == "split_event":
+        handle_split_event(arguments)
 
     st.session_state.query_status = "Success"
     st.rerun()
 
 
 def handle_insert_event(arguments: dict) -> None:
-    response = requests.post(f"{BACKEND_URL}/events", json=arguments)
-    if response.status_code == 200:
-        st.success("Event added successfully!")
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": f"I've added the event '{arguments.get('event_name')}' to your calendar.",
-            }
-        )
+    # Calculate event duration in minutes
+    start_time = datetime.fromisoformat(arguments["event_start_date_time"])
+    end_time = datetime.fromisoformat(arguments["event_end_date_time"])
+    duration = (end_time - start_time).total_seconds() / 60
+
+    # If event splitting is enabled and event is longer than 2 hours
+    if st.session_state.get("enable_event_splitting", False) and duration > 120:
+        # Create initial event to get its ID
+        response = requests.post(f"{BACKEND_URL}/events", json=arguments)
+        if response.status_code == 200:
+            event = response.json()
+            # Ask LLM to split the event
+            split_prompt = f"""Please split this event into smaller tasks:
+            Event: {arguments['event_name']}
+            Description: {arguments.get('event_description', '')}
+            Duration: {duration} minutes
+            Each task should be between 30 and 120 minutes."""
+
+            st.session_state.messages.append(
+                {"role": "system", "content": split_prompt}
+            )
+
+            split_response = requests.post(
+                f"{BACKEND_URL}/chat",
+                json={
+                    "messages": st.session_state.messages,
+                    "selected_date": st.session_state.selected_date.isoformat(),
+                    "functions": [
+                        f for f in get_llm_functions() if f["name"] == "split_event"
+                    ],
+                },
+            )
+
+            if split_response.status_code == 200:
+                handle_chat_response(split_response.json())
+            else:
+                st.error("Failed to split event")
     else:
-        st.error("Failed to add event")
+        # Handle normal event creation
+        response = requests.post(f"{BACKEND_URL}/events", json=arguments)
+        if response.status_code == 200:
+            st.success("Event added successfully!")
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": f"I've added the event '{arguments.get('event_name')}' to your calendar.",
+                }
+            )
+        else:
+            st.error("Failed to add event")
 
 
 def handle_delete_event(arguments: dict) -> None:
@@ -144,6 +196,20 @@ def handle_get_events() -> None:
             )
     else:
         st.error("Failed to fetch events")
+
+
+def handle_split_event(arguments: dict) -> None:
+    response = requests.post(f"{BACKEND_URL}/events/split", json=arguments)
+    if response.status_code == 200:
+        st.success("Event split successfully!")
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": "I've split the event into smaller tasks in your calendar.",
+            }
+        )
+    else:
+        st.error("Failed to split event")
 
 
 def display_chat() -> None:
@@ -327,7 +393,7 @@ def display_events() -> None:
 
 
 def get_llm_functions() -> list:
-    return [
+    functions = [
         {
             "name": "insert_event",
             "description": "Insert a new calendar event",
@@ -385,6 +451,49 @@ def get_llm_functions() -> list:
         },
     ]
 
+    if st.session_state.get("enable_event_splitting", False):
+        functions.append(
+            {
+                "name": "split_event",
+                "description": "Split a single event into multiple smaller tasks",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "event_id": {
+                            "type": "integer",
+                            "description": "ID of the event to split",
+                        },
+                        "tasks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "task_name": {"type": "string"},
+                                    "task_start_date_time": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "description": "Start datetime of the task (ISO format)",
+                                    },
+                                    "task_end_date_time": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "description": "End datetime of the task (ISO format)",
+                                    },
+                                },
+                                "required": [
+                                    "task_name",
+                                    "task_start_date_time",
+                                    "task_end_date_time",
+                                ],
+                            },
+                        },
+                    },
+                    "required": ["event_id", "tasks"],
+                },
+            }
+        )
+    return functions
+
 
 def main():
     st.set_page_config(
@@ -394,15 +503,17 @@ def main():
         initial_sidebar_state="expanded",
     )
 
-    set_custom_style()
-
-    # Initialize session state
+    # Initialize session state variables
+    if "enable_event_splitting" not in st.session_state:
+        st.session_state.enable_event_splitting = False
     if "messages" not in st.session_state:
         st.session_state.messages = [get_system_message(datetime.now())]
     if "query_status" not in st.session_state:
         st.session_state.query_status = ""
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = datetime.now()
+
+    set_custom_style()
 
     # Place chat input at the root level
     prompt = st.chat_input("How can I assist you with your calendar?")
@@ -489,6 +600,12 @@ def main():
         selected_datetime = datetime.combine(selected_date, datetime.min.time())
         st.session_state.selected_date = selected_datetime
         st.session_state.messages[0] = get_system_message(selected_datetime)
+
+        st.session_state.enable_event_splitting = st.checkbox(
+            "Enable Event Splitting",
+            value=False,
+            help="Allow the assistant to split events into multiple smaller tasks",
+        )
 
         st.divider()
         if st.button("🗑️ Clear Chat History", use_container_width=True):

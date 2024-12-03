@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import List, Optional, Dict
 from pydantic import BaseModel
 
+from ....domain.entities.task import TaskCreate
+
 
 class EventCreate(BaseModel):
     event_name: str
@@ -24,3 +26,8 @@ class EventResponse(BaseModel):
     event_start_date_time: datetime
     event_end_date_time: datetime
     event_location: Optional[str]
+
+
+class EventSplitRequest(BaseModel):
+    event_id: int
+    tasks: List[TaskCreate]

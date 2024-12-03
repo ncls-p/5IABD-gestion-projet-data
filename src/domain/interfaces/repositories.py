@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 from ..entities.event import Event
+from ..entities.task import TaskCreate  # Add this import if needed
 
 
 class EventRepository(ABC):
@@ -14,6 +15,10 @@ class EventRepository(ABC):
 
     @abstractmethod
     async def delete(self, event_id: int) -> bool:
+        pass
+
+    @abstractmethod
+    async def get_by_id(self, event_id: int) -> Optional[Event]:
         pass
 
 

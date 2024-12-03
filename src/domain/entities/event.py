@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
+from .task import TaskCreate
 
 
 class Event(BaseModel):
@@ -10,3 +11,4 @@ class Event(BaseModel):
     event_start_date_time: datetime
     event_end_date_time: datetime
     event_location: Optional[str] = None
+    tasks: Optional[List[TaskCreate]] = None

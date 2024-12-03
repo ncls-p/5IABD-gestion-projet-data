@@ -1,5 +1,5 @@
 import psycopg2
-from typing import List
+from typing import List, Optional
 from ...core.config import get_settings
 from ...domain.entities.event import Event
 from ...domain.interfaces.repositories import EventRepository
@@ -76,6 +76,28 @@ class PostgresEventRepository(EventRepository):
                 )
                 for row in rows
             ]
+        finally:
+            cur.close()
+
+    async def get_by_id(self, event_id: int) -> Optional[Event]:
+        cur = self.conn.cursor()
+        try:
+            cur.execute("SELECT * FROM calendar_events WHERE id = %s", (event_id,))
+            row = cur.fetchone()
+            if row:
+                return Event(
+                    id=row[0],
+                    event_name=row[1],
+                    event_description=row[2],
+                    event_start_date_time=row[3],
+                    event_end_date_time=row[4],
+                    event_location=row[5],
+                )
+            else:
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching event: {str(e)}")
+            return None
         finally:
             cur.close()
 
