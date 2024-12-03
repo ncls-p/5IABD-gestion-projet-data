@@ -512,29 +512,16 @@ def main():
         st.session_state.query_status = ""
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = datetime.now()
+    if "show_columns" not in st.session_state:
+        st.session_state.show_columns = True
 
     set_custom_style()
-
-    # Place chat input at the root level
-    prompt = st.chat_input("How can I assist you with your calendar?")
-    if prompt:
-        with st.spinner("Processing your request..."):
-            chat_input_handler(prompt)
 
     # Use a container for the main content
     with st.container():
         st.title("🗓️ Calendar Planning Assistant")
-
-        # Create responsive columns
-        left_col, right_col = st.columns([3, 2], gap="large")
-
-        with left_col:
-            st.markdown("### 💬 Chat")
-            display_chat()
-
-        with right_col:
-            st.markdown("### 📅 Calendar Events")
-
+        
+        if st.session_state.show_columns:
             # Quick actions
             col1, col2 = st.columns(2, gap="small")
             with col1:
@@ -547,17 +534,21 @@ def main():
                         chat_input_handler(
                             "Please help me plan my work week effectively"
                         )
-            with col2:
-                if st.button(
-                    "🎯 Optimize Schedule",
-                    help="Optimize your current schedule",
-                    use_container_width=True,
-                ):
-                    with st.spinner("Optimizing schedule..."):
-                        chat_input_handler(
-                            "Please help me optimize my current schedule"
-                        )
-
+                with col2:
+                    if st.button(
+                        "🎯 Optimize Schedule",
+                        help="Optimize your current schedule",
+                        use_container_width=True,
+                    ):
+                        with st.spinner("Optimizing schedule..."):
+                            chat_input_handler(
+                                "Please help me optimize my current schedule"
+                            )
+                # Button to show the calendar
+                if st.button("Show Calendar", use_container_width=True):
+                    st.session_state.show_columns = False
+                    st.rerun()
+        else:
             # Display calendar events
             display_events()
 
@@ -575,6 +566,11 @@ def main():
                             mime="text/calendar",
                             use_container_width=True,
                         )
+
+            if st.button("🔙 Edit", use_container_width=True):
+                st.session_state.show_columns = True
+                st.rerun()
+        
 
     # Sidebar remains as is
     # Sidebar
@@ -608,9 +604,21 @@ def main():
         )
 
         st.divider()
+        # Chat Section
+        st.markdown("### 💬 Chat")
+        display_chat()
+        
+        st.divider()
+        prompt = st.text_input("How can I assist you with your calendar?", key="sidebar_chat_input")
+        if prompt:
+            with st.spinner("Processing your request..."):
+                chat_input_handler(prompt)
+            st.rerun()
+
+        st.divider()
         if st.button("🗑️ Clear Chat History", use_container_width=True):
-            st.session_state.messages = [st.session_state.messages[0]]
-            st.experimental_rerun()
+                st.session_state.messages = [st.session_state.messages[0]]
+                st.rerun()
 
 
 if __name__ == "__main__":
