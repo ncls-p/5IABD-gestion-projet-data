@@ -77,10 +77,7 @@ cp .env.example .env
 ### Éditer .env avec votre configuration
 
 ```bash
-docker run -d \
--e POSTGRES_PASSWORD=mysecretpassword \
--p 5432:5432 \
-postgres
+docker compose up -d
 ```
 
 
@@ -89,7 +86,7 @@ postgres
 1. Démarrer le serveur backend:
 
 ```bash
-python -m uvicorn src.main:app --reload
+python run.py
 ```
 
 
