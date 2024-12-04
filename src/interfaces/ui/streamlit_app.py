@@ -530,8 +530,6 @@ def main():
         st.session_state.query_status = ""
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = datetime.now()
-    if "show_columns" not in st.session_state:
-        st.session_state.show_columns = True
     if "text_input_value" not in st.session_state:
         st.session_state.text_input_value = ""
 
@@ -541,55 +539,23 @@ def main():
     with st.container():
         st.title("🗓️ Calendar Planning Assistant")
         
-        if st.session_state.show_columns:
-            # Quick actions
-            col1, col2 = st.columns(2, gap="small")
-            with col1:
-                if st.button(
-                    "📝 Plan Week",
-                    help="Plan your work week efficiently",
-                    use_container_width=True,
-                ):
-                    with st.spinner("Planning your week..."):
-                        chat_input_handler(
-                            "Please help me plan my work week effectively"
-                        )
-                with col2:
-                    if st.button(
-                        "🎯 Optimize Schedule",
-                        help="Optimize your current schedule",
+        # Display calendar events
+        display_events()
+
+        # Export button
+        if st.button("📤 Export Calendar", use_container_width=True):
+            with st.spinner("Preparing calendar export..."):
+                response = requests.post(
+                    f"{BACKEND_URL}/export-ics", json=st.session_state.messages
+                )
+                if response.status_code == 200:
+                    st.download_button(
+                        label="⬇️ Download ICS",
+                        data=response.text,
+                        file_name="schedule.ics",
+                        mime="text/calendar",
                         use_container_width=True,
-                    ):
-                        with st.spinner("Optimizing schedule..."):
-                            chat_input_handler(
-                                "Please help me optimize my current schedule"
-                            )
-                # Button to show the calendar
-                if st.button("Show Calendar", use_container_width=True):
-                    st.session_state.show_columns = False
-                    st.rerun()
-        else:
-            # Display calendar events
-            display_events()
-
-            # Export button
-            if st.button("📤 Export Calendar", use_container_width=True):
-                with st.spinner("Preparing calendar export..."):
-                    response = requests.post(
-                        f"{BACKEND_URL}/export-ics", json=st.session_state.messages
                     )
-                    if response.status_code == 200:
-                        st.download_button(
-                            label="⬇️ Download ICS",
-                            data=response.text,
-                            file_name="schedule.ics",
-                            mime="text/calendar",
-                            use_container_width=True,
-                        )
-
-            if st.button("🔙 Edit", use_container_width=True):
-                st.session_state.show_columns = True
-                st.rerun()
         
 
     # Sidebar remains as is
@@ -631,7 +597,7 @@ def main():
         st.divider()
         with st.form(key='my_form'):
             prompt = st.text_input("How can I assist you with your calendar?", key="sidebar_chat_input")
-            submit_button = st.form_submit_button(label='Send')
+            submit_button = st.form_submit_button(label='Send', use_container_width=True)
 
         if submit_button and prompt:
             with st.spinner("Processing your request..."):
