@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta
+import time
 
 import requests
 import streamlit as st
@@ -94,9 +95,8 @@ def handle_chat_response(data: dict) -> None:
         if "function_call" in message:
             handle_function_call(message["function_call"])
         elif "content" in message and message["content"] is not None:
-            st.session_state.messages.append(
-                {"role": "assistant", "content": message["content"]}
-            )
+            st.toast(message["content"])
+            time.sleep(1)
             st.session_state.query_status = "Success"
         else:
             st.session_state.query_status = "Error: Empty response from assistant"
@@ -164,12 +164,8 @@ def handle_insert_event(arguments: dict) -> None:
         response = requests.post(f"{BACKEND_URL}/events", json=arguments)
         if response.status_code == 200:
             st.success("Event added successfully!")
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": f"I've added the event '{arguments.get('event_name')}' to your calendar.",
-                }
-            )
+            st.toast(f"I've added the event '{arguments.get('event_name')}' to your calendar.")
+            time.sleep(1)
         else:
             st.error("Failed to add event")
 
