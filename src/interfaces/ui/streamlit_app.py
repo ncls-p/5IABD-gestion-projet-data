@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import requests
 import streamlit as st
 from streamlit_calendar import calendar
+import streamlit.components.v1 as components
 
 from src.core.logger import setup_logger
 
@@ -44,6 +45,21 @@ def get_system_message(selected_date: datetime) -> dict:
         {split_instruction}""",
     }
 
+
+def on_keypress():
+    return """
+<script>
+document.addEventListener('keypress', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();  // Empêcher le comportement par défaut
+        var form = document.querySelector('form');
+        if (form) {
+            form.dispatchEvent(new Event('submit'));
+        }
+    }
+});
+</script>
+"""
 
 def chat_input_handler(prompt: str) -> None:
     if prompt:
@@ -503,6 +519,8 @@ def main():
         initial_sidebar_state="expanded",
     )
 
+    components.html(on_keypress(), height=0, width=0)
+
     # Initialize session state variables
     if "enable_event_splitting" not in st.session_state:
         st.session_state.enable_event_splitting = False
@@ -514,6 +532,8 @@ def main():
         st.session_state.selected_date = datetime.now()
     if "show_columns" not in st.session_state:
         st.session_state.show_columns = True
+    if "text_input_value" not in st.session_state:
+        st.session_state.text_input_value = ""
 
     set_custom_style()
 
@@ -609,11 +629,14 @@ def main():
         display_chat()
         
         st.divider()
-        prompt = st.text_input("How can I assist you with your calendar?", key="sidebar_chat_input")
-        if prompt:
+        with st.form(key='my_form'):
+            prompt = st.text_input("How can I assist you with your calendar?", key="sidebar_chat_input")
+            submit_button = st.form_submit_button(label='Send')
+
+        if submit_button and prompt:
             with st.spinner("Processing your request..."):
                 chat_input_handler(prompt)
-            st.rerun()
+            st.session_state.sidebar_chat_input = ""
 
         st.divider()
         if st.button("🗑️ Clear Chat History", use_container_width=True):
