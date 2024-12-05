@@ -599,6 +599,8 @@ def main():
             with st.spinner("Processing your request..."):
                 chat_input_handler(prompt)
             st.session_state.sidebar_chat_input = ""
+            prompt = None
+            st.rerun()
 
         st.divider()
         if st.button("🗑️ Clear Chat History", use_container_width=True):
